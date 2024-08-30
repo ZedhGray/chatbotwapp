@@ -1,33 +1,46 @@
-const fs = require('fs')
-const { Client, LocalAuth } = require('whatsapp-web.js')
+const { Client, RemoteAuth } = require('whatsapp-web.js')
 const qrcode = require('qrcode-terminal')
+const { MongoStore } = require('wwebjs-mongo')
+const mongoose = require('mongoose')
 
-const client = new Client({
-  authStrategy: new LocalAuth(),
-})
+// URL de conexión a MongoDB (ajusta según sea necesario)
+const MONGODB_URI = 'mongodb://localhost:27017/whatsapp-bot'
 
-client.on('qr', (qr) => {
-  qrcode.generate(qr, { small: true })
-})
-const heartRegex = /❤️|\u2764|\u1F496$/i
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => {
+    const store = new MongoStore({ mongoose: mongoose })
+    const client = new Client({
+      authStrategy: new RemoteAuth({
+        store: store,
+        backupSyncIntervalMs: 300000,
+      }),
+      puppeteer: {
+        args: ['--no-sandbox'],
+      },
+    })
 
-client.on('ready', () => {
-  console.log('Cliente está listo!')
-})
+    client.on('qr', (qr) => {
+      qrcode.generate(qr, { small: true })
+      console.log('QR RECEIVED', qr)
+    })
 
-client.on('message', (message) => {
-  if (message.body === `Te amo mucho mi amor hermoso ${heartRegex}`) {
-    message.reply(`Te amo mucho amor hermosa ❤️`)
-  }
-  if (message.body === 'Te amo mucho mi amor hermoso') {
-    message.reply(`Te amo mucho amor hermosa ❤️`)
-  }
-  if (message.body === 'mochi') {
-    message.reply(`Te amo mucho amor hermosa ❤️`)
-  }
-  if (message.body === 'cara de nalga') {
-    message.reply(`Te amo mucho amor hermosa ❤️`)
-  }
-})
+    client.on('remote_session_saved', () => {
+      console.log('SESSION SAVED!')
+    })
 
-client.initialize()
+    client.on('ready', () => {
+      console.log('Cliente está listo!')
+    })
+
+    client.on('message', (message) => {
+      if (message.body === 'Quiero cotizar un servicio de afinación') {
+        message.reply(
+          'Hola, claro se lo cotizamos enseguida solo ocupamos los siguientes datos de su vehículo: Marca: Modelo, Año, Motor y Kilometraje.'
+        )
+      }
+    })
+
+    client.initialize()
+  })
+  .catch((err) => console.log('MongoDB connection error: ', err))
