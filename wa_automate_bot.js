@@ -9,7 +9,7 @@ wa.create({
   headless: true,
   hostNotificationLang: 'PT_BR',
   logConsole: false,
-  popup: true,  
+  popup: true,
   qrTimeout: 0, // 0 means it will wait forever for you to scan the qr code
 }).then((client) => start(client))
 
