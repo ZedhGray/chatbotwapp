@@ -1,3 +1,9 @@
 .wwebjs_auth/
 .wwebjs_cache/
 node_modules/
+
+# managed
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed
