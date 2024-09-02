@@ -10,19 +10,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-<<<<<<< HEAD
-    "@open-wa/wa-automate": "^4.72.2",
-    "puppeteer-core": "^23.2.1",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.23.0"
-=======
-    "electron": "^32.0.1",
-    "electron-store": "^10.0.0",
-    "fs": "^0.0.1-security",
-    "mongoose": "^8.6.0",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.25.0",
-    "wwebjs-mongo": "^1.1.0"
->>>>>>> origin/main
+    "@open-wa/wa-automate": "^4.72.2"
   }
 }
