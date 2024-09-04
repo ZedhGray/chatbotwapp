@@ -40,11 +40,14 @@ wa.create({
 
 async function start(client) {
   client.onMessage(async (message) => {
-    const today = moment.tz('America/Mexico_City').startOf('day') // Ajusta la zona horaria según sea necesario
+    const today = moment.tz('America/Mexico_City').startOf('day')
+    const currentHour = moment.tz('America/Mexico_City').hour()
+    const currentMinute = moment.tz('America/Mexico_City').minute()
     // Extraer el número de teléfono del remitente
     const senderPhone = message.from.split('@')[0]
 
     let isFirstMessageOfDayOrEver = true
+    let isLaboralTime = true
 
     // Verificar si el usuario ya envió un mensaje en los últimos 3 días
     const userData = dbData.users[senderPhone] || null
@@ -57,8 +60,17 @@ async function start(client) {
       )
       return
     }
+    // Verifica si el mensaje esta puesto en horario laboral entre 8am y 19 pm
+    if (
+      currentHour >= 8 &&
+      currentHour <= 19 &&
+      currentMinute >= 0 &&
+      currentMinute <= 30
+    ) {
+      isLaboralTime = false
+    }
     //
-    if (isFirstMessageOfDayOrEver) {
+    if (isFirstMessageOfDayOrEver && isLaboralTime) {
       await client.sendText(
         message.from,
         `
@@ -91,14 +103,49 @@ En un momento uno de nuestros agentes de ventas le estará atendiendo.
 😄¡Muchas gracias por su mensaje!`
         )
       }, 2000) // Esperamos 2 segundos antes de enviar el segundo mensaje
-    }
+    } else {
+      await client.sendText(
+        message.from,
+        `
+Hola, gracias por contactarnos. 
+😄Soy el asistente virtual de Garcia.
+Me alegra poder ayudarte con tu vehículo. 🚗
+Podrias indicarme que servicio requieres.
+Tenemos varias opciones disponibles:
 
+*Llantas
+*Rines
+*Accesorios
+*Montaje
+*Inflado
+*Balanceo
+*Alineación
+*Suspensión
+*Frenos
+*Afinación
+*Otros servicios específicos
+        `
+      )
+      // Enviamos el mensaje adicional después de un breve intervalo
+      setTimeout(async () => {
+        await client.sendText(
+          message.from,
+          `
+Nuestro personal estará encantado de atenderle una vez abra el establecimiento. 
+📅 Horario de atención:
+🕒 Lunes a Sábado: 8:00 AM - 7:00 PM
+😄¡Muchas gracias por su mensaje!`
+        )
+      }, 2000)
+    }
+    // else
     // Actualizar la fecha del último mensaje para este usuario
     dbData.users[senderPhone] = {
       lastMessage: today.toISOString(),
     }
     saveData(dbData)
-    //
+
+    // Servicio de cotizacion
     if (message.body === 'Quiero cotizar un servicio de afinación') {
       await client.sendText(
         message.from,
