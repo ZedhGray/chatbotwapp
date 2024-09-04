@@ -49,14 +49,14 @@ async function start(client) {
     let isFirstMessageOfDayOrEver = true
     let isLaboralTime = true
 
-    // Verificar si el usuario ya envió un mensaje en los últimos 3 días
+    // Verificar si el usuario ya envió un mensaje en los últimos 7 días
     const userData = dbData.users[senderPhone] || null
     if (
       userData &&
-      moment(userData.lastMessage).add(3, 'days').isAfter(today)
+      moment(userData.lastMessage).add(6, 'days').isAfter(today)
     ) {
       console.log(
-        `Ignorando mensaje de ${senderPhone}. Último mensaje enviado hace menos de 3 días.`
+        `Ignorando mensaje de ${senderPhone}. Último mensaje enviado hace menos de 5 días.`
       )
       return
     }
@@ -103,7 +103,7 @@ En un momento uno de nuestros agentes de ventas le estará atendiendo.
 😄¡Muchas gracias por su mensaje!`
         )
       }, 2000) // Esperamos 2 segundos antes de enviar el segundo mensaje
-    } else {
+    } else if (isFirstMessageOfDayOrEver && !isLaboralTime) {
       await client.sendText(
         message.from,
         `
