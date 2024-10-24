@@ -1,0 +1,17 @@
+{
+  "credits": [
+    {
+      "name": "Eduardo",
+      "phone": "5217551369564",
+      "day": "2024-09-25T13:13:00.000Z",
+      "dueDate": "2024-10-25T13:00:00.000Z",
+      "amount": 5000,
+      "notificationsSent": {
+        "day3": false,
+        "day2": false,
+        "day1": false,
+        "dueDay": true
+      }
+    }
+  ]
+}
