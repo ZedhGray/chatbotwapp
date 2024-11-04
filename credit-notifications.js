@@ -1,8 +1,9 @@
-const wa = require('@open-wa/wa-automate')
-const moment = require('moment-timezone')
 const fs = require('fs')
+const moment = require('moment-timezone')
+const wa = require('@open-wa/wa-automate')
 
-const CREDITS_FILE = 'credits.json'
+const CLIENTS_FILE = '../cobranza/clientes_ventas_combined.json'
+const LINE_FILE = '../cobranza/line.json'
 const MESSAGES_FILE = 'messages.json'
 
 // Función para cargar los mensajes
@@ -15,93 +16,147 @@ function loadMessages() {
   }
 }
 
-// Función para cargar los créditos
-function loadCredits() {
+// Función para cargar los clientes
+function loadClients() {
   try {
-    return JSON.parse(fs.readFileSync(CREDITS_FILE))
+    return JSON.parse(fs.readFileSync(CLIENTS_FILE))
   } catch (error) {
-    console.error('Error cargando créditos:', error)
-    return { credits: [] }
+    console.error('Error cargando clientes:', error)
+    return {}
   }
 }
 
-// Función para guardar los créditos
-function saveCredits(data) {
+// Función para cargar la línea de crédito
+function loadLine() {
   try {
-    fs.writeFileSync(CREDITS_FILE, JSON.stringify(data, null, 2))
+    return JSON.parse(fs.readFileSync(LINE_FILE))
   } catch (error) {
-    console.error('Error guardando créditos:', error)
+    console.error('Error cargando línea de crédito:', error)
+    return {}
   }
 }
 
-// Función simplificada para calcular días hasta el próximo pago
-function getDaysUntilNextPayment(dueDate) {
-  const today = moment.tz('America/Mexico_City')
-  const dueDateDay = moment(dueDate).date() // Obtiene el día del mes de la fecha de pago
+function getDaysUntilNextPayment(lastSaleDate) {
+  // Usamos new Date() para obtener la fecha actual real del sistema
+  const today = moment(new Date()).tz('America/Mexico_City').startOf('day')
+  const lastSaleMoment = moment(lastSaleDate).startOf('day')
 
-  // Crear una fecha con el día de pago en el mes actual
-  let nextPayment = moment(today).date(dueDateDay)
+  // Fecha de pago = fecha inicial + 1 mes
+  const paymentDate = lastSaleMoment.clone().add(1, 'month').startOf('day')
 
-  // Si ya pasó la fecha de pago este mes, mover al próximo mes
-  if (today.date() > dueDateDay) {
-    nextPayment = nextPayment.add(1, 'month')
-  }
+  // Calculamos días hasta el pago
+  const daysUntil = paymentDate.diff(today, 'days')
 
-  const daysUntil = nextPayment.diff(today, 'days')
-
-  console.log('Fecha actual:', today.format('YYYY-MM-DD'))
-  console.log('Próxima fecha de pago:', nextPayment.format('YYYY-MM-DD'))
-  console.log('Días hasta el pago:', daysUntil)
+  console.log('Fecha de cobro inicial:', lastSaleMoment.format('YYYY-MM-DD'))
+  console.log('Fecha actual del sistema:', today.format('YYYY-MM-DD'))
+  console.log('Fecha objetivo de pago:', paymentDate.format('YYYY-MM-DD'))
+  console.log('Días de diferencia:', daysUntil)
 
   return daysUntil
 }
 
-// Función para verificar y enviar notificaciones
-async function checkAndSendNotifications(client) {
+async function checkAndSendNotifications(client, clientData) {
   const messages = loadMessages()
-  const creditsData = loadCredits()
+  const line = loadLine()
 
-  for (const credit of creditsData.credits) {
-    const daysUntilDue = getDaysUntilNextPayment(credit.dueDate)
-    console.log(
-      `Días hasta el próximo pago para ${credit.name}: ${daysUntilDue}`
+  for (const [clientId, clientInfo] of Object.entries(clientData)) {
+    const { telefono1, nombre, ventas } = clientInfo
+
+    // Encontrar la fecha de la venta
+    const sortedSales = ventas.sort(
+      (a, b) => new Date(a.fecha) - new Date(b.fecha)
     )
+    const sale = sortedSales[0]
+    const saleDate = sale.fecha
 
-    // Resetear las notificaciones al inicio de cada ciclo
-    if (daysUntilDue > 3) {
-      credit.notificationsSent = {
+    const daysUntilPayment = getDaysUntilNextPayment(saleDate)
+    console.log(`Cliente: ${nombre}`)
+    console.log(`Días hasta/desde pago: ${daysUntilPayment}`)
+
+    try {
+      // Inicializar el estado de notificaciones si no existe
+      const lineData = line[clientId] || {
         day3: false,
         day2: false,
         day1: false,
         dueDay: false,
       }
-    }
 
-    try {
-      if (daysUntilDue === 3 && !credit.notificationsSent.day3) {
-        await client.sendText(`${credit.phone}@c.us`, messages.message3)
-        credit.notificationsSent.day3 = true
-        console.log(`Mensaje de 3 días enviado a ${credit.name}`)
-      } else if (daysUntilDue === 2 && !credit.notificationsSent.day2) {
-        await client.sendText(`${credit.phone}@c.us`, messages.message2)
-        credit.notificationsSent.day2 = true
-        console.log(`Mensaje de 2 días enviado a ${credit.name}`)
-      } else if (daysUntilDue === 1 && !credit.notificationsSent.day1) {
-        await client.sendText(`${credit.phone}@c.us`, messages.message1)
-        credit.notificationsSent.day1 = true
-        console.log(`Mensaje de 1 día enviado a ${credit.name}`)
-      } else if (daysUntilDue === 0 && !credit.notificationsSent.dueDay) {
-        await client.sendText(`${credit.phone}@c.us`, messages.cobroMessage)
-        credit.notificationsSent.dueDay = true
-        console.log(`Mensaje de cobro enviado a ${credit.name}`)
+      // Formatear el número de teléfono
+      const formattedPhone = `521${telefono1.replace(/[-() ]/g, '')}`
+
+      // Solo enviar mensajes si estamos en -3, -2, -1 o 0 días del pago
+      if (daysUntilPayment >= -3 && daysUntilPayment <= 0) {
+        let shouldSendMessage = false
+        let messageType = ''
+        let messageContent = ''
+
+        // Convertimos el número negativo a positivo para el switch
+        const daysToCheck = Math.abs(daysUntilPayment)
+
+        switch (daysToCheck) {
+          case 3:
+            if (!lineData.day3) {
+              shouldSendMessage = true
+              messageType = 'day3'
+              messageContent = messages.message3
+            }
+            break
+          case 2:
+            if (!lineData.day2) {
+              shouldSendMessage = true
+              messageType = 'day2'
+              messageContent = messages.message2
+            }
+            break
+          case 1:
+            if (!lineData.day1) {
+              shouldSendMessage = true
+              messageType = 'day1'
+              messageContent = messages.message1
+            }
+            break
+          case 0:
+            if (!lineData.dueDay) {
+              shouldSendMessage = true
+              messageType = 'dueDay'
+              messageContent = messages.cobroMessage
+            }
+            break
+        }
+
+        if (shouldSendMessage && messageContent) {
+          console.log(
+            `Intentando enviar mensaje tipo ${messageType} a ${nombre}`
+          )
+          console.log(`Contenido del mensaje: ${messageContent}`)
+
+          await client.sendText(`${formattedPhone}@c.us`, messageContent)
+          lineData[messageType] = true // Actualizamos directamente el campo
+          console.log(`Mensaje de ${messageType} enviado a ${nombre}`)
+
+          // Guardar el estado actualizado de las notificaciones
+          line[clientId] = lineData
+          fs.writeFileSync(LINE_FILE, JSON.stringify(line, null, 2))
+        } else {
+          console.log(
+            `No se envía mensaje a ${nombre}: mensaje ya enviado o contenido no disponible`
+          )
+        }
+      } else {
+        console.log(
+          `No es tiempo de enviar mensajes a ${nombre} (diferencia de ${daysUntilPayment} días)`
+        )
       }
     } catch (error) {
-      console.error(`Error enviando mensaje a ${credit.name}:`, error)
+      console.error(`Error enviando mensaje a ${nombre}:`, error)
+      console.error('Detalles del error:', {
+        daysUntilPayment,
+        messages: Object.keys(messages),
+        lineData: line[clientId],
+      })
     }
   }
-
-  // Guardar el estado actualizado de las notificaciones
-  saveCredits(creditsData)
 }
 
 // Inicializar el cliente de WhatsApp
@@ -120,8 +175,12 @@ wa.create({
 
 async function startCreditNotifications(client) {
   // Ejecutar la verificación cada hora
-  setInterval(() => checkAndSendNotifications(client), 1000 * 60 * 60)
+  setInterval(() => {
+    const clients = loadClients()
+    checkAndSendNotifications(client, clients)
+  }, 1000 * 60 * 60)
 
   // También ejecutar una vez al inicio
-  await checkAndSendNotifications(client)
+  const clients = loadClients()
+  await checkAndSendNotifications(client, clients)
 }
