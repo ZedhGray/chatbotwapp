@@ -1,12 +1,12 @@
 const fs = require('fs')
 const moment = require('moment-timezone')
 const wa = require('@open-wa/wa-automate')
+const { update_client_states_wsp } = require('../cobranza/database')
 
 const CLIENTS_FILE = '../cobranza/clientes_ventas_combined.json'
 const LINE_FILE = '../cobranza/line.json'
 const MESSAGES_FILE = 'messages.json'
 
-// Función para cargar los mensajes
 function loadMessages() {
   try {
     return JSON.parse(fs.readFileSync(MESSAGES_FILE))
@@ -16,7 +16,6 @@ function loadMessages() {
   }
 }
 
-// Función para cargar los clientes
 function loadClients() {
   try {
     return JSON.parse(fs.readFileSync(CLIENTS_FILE))
@@ -26,7 +25,6 @@ function loadClients() {
   }
 }
 
-// Función para cargar la línea de crédito
 function loadLine() {
   try {
     return JSON.parse(fs.readFileSync(LINE_FILE))
@@ -37,14 +35,9 @@ function loadLine() {
 }
 
 function getDaysUntilNextPayment(lastSaleDate) {
-  // Usamos new Date() para obtener la fecha actual real del sistema
   const today = moment(new Date()).tz('America/Mexico_City').startOf('day')
   const lastSaleMoment = moment(lastSaleDate).startOf('day')
-
-  // Fecha de pago = fecha inicial + 1 mes
   const paymentDate = lastSaleMoment.clone().add(1, 'month').startOf('day')
-
-  // Calculamos días hasta el pago
   const daysUntil = paymentDate.diff(today, 'days')
 
   console.log('Fecha de cobro inicial:', lastSaleMoment.format('YYYY-MM-DD'))
@@ -62,19 +55,18 @@ async function checkAndSendNotifications(client, clientData) {
   for (const [clientId, clientInfo] of Object.entries(clientData)) {
     const { telefono1, nombre, ventas } = clientInfo
 
-    // Encontrar la fecha de la venta
     const sortedSales = ventas.sort(
       (a, b) => new Date(a.fecha) - new Date(b.fecha)
     )
-    const sale = sortedSales[0]
-    const saleDate = sale.fecha
+    const lastSale = sortedSales[sortedSales.length - 1]
+    const saleDate = lastSale.fecha
+    const saldoRestante = lastSale.restante
 
     const daysUntilPayment = getDaysUntilNextPayment(saleDate)
     console.log(`Cliente: ${nombre}`)
     console.log(`Días hasta/desde pago: ${daysUntilPayment}`)
 
     try {
-      // Inicializar el estado de notificaciones si no existe
       const lineData = line[clientId] || {
         day3: false,
         day2: false,
@@ -82,16 +74,13 @@ async function checkAndSendNotifications(client, clientData) {
         dueDay: false,
       }
 
-      // Formatear el número de teléfono
       const formattedPhone = `521${telefono1.replace(/[-() ]/g, '')}`
 
-      // Solo enviar mensajes si estamos en -3, -2, -1 o 0 días del pago
       if (daysUntilPayment >= -3 && daysUntilPayment <= 0) {
         let shouldSendMessage = false
         let messageType = ''
         let messageContent = ''
 
-        // Convertimos el número negativo a positivo para el switch
         const daysToCheck = Math.abs(daysUntilPayment)
 
         switch (daysToCheck) {
@@ -100,6 +89,8 @@ async function checkAndSendNotifications(client, clientData) {
               shouldSendMessage = true
               messageType = 'day3'
               messageContent = messages.message3
+                .replace('{client name}', nombre)
+                .replace('{debt amount}', saldoRestante.toFixed(2))
             }
             break
           case 2:
@@ -107,6 +98,8 @@ async function checkAndSendNotifications(client, clientData) {
               shouldSendMessage = true
               messageType = 'day2'
               messageContent = messages.message2
+                .replace('{client name}', nombre)
+                .replace('{debt amount}', saldoRestante.toFixed(2))
             }
             break
           case 1:
@@ -114,6 +107,8 @@ async function checkAndSendNotifications(client, clientData) {
               shouldSendMessage = true
               messageType = 'day1'
               messageContent = messages.message1
+                .replace('{client name}', nombre)
+                .replace('{debt amount}', saldoRestante.toFixed(2))
             }
             break
           case 0:
@@ -121,6 +116,8 @@ async function checkAndSendNotifications(client, clientData) {
               shouldSendMessage = true
               messageType = 'dueDay'
               messageContent = messages.cobroMessage
+                .replace('{client name}', nombre)
+                .replace('{debt amount}', saldoRestante.toFixed(2))
             }
             break
         }
@@ -132,10 +129,10 @@ async function checkAndSendNotifications(client, clientData) {
           console.log(`Contenido del mensaje: ${messageContent}`)
 
           await client.sendText(`${formattedPhone}@c.us`, messageContent)
-          lineData[messageType] = true // Actualizamos directamente el campo
+          lineData[messageType] = true
           console.log(`Mensaje de ${messageType} enviado a ${nombre}`)
 
-          // Guardar el estado actualizado de las notificaciones
+          await update_client_states_wsp(clientId, lineData)
           line[clientId] = lineData
           fs.writeFileSync(LINE_FILE, JSON.stringify(line, null, 2))
         } else {
@@ -159,7 +156,6 @@ async function checkAndSendNotifications(client, clientData) {
   }
 }
 
-// Inicializar el cliente de WhatsApp
 wa.create({
   sessionId: 'CREDIT_BOT_SESSION',
   multiDevice: true,
@@ -174,13 +170,11 @@ wa.create({
 }).then((client) => startCreditNotifications(client))
 
 async function startCreditNotifications(client) {
-  // Ejecutar la verificación cada hora
   setInterval(() => {
     const clients = loadClients()
     checkAndSendNotifications(client, clients)
   }, 1000 * 60 * 60)
 
-  // También ejecutar una vez al inicio
   const clients = loadClients()
   await checkAndSendNotifications(client, clients)
 }
