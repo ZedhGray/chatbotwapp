@@ -1,7 +1,7 @@
 const fs = require('fs')
 const moment = require('moment-timezone')
 const wa = require('@open-wa/wa-automate')
-const { update_client_states_wsp } = require('../cobranza/database')
+const { update_client_states_wsp } = require('./database')
 
 const CLIENTS_FILE = '../cobranza/clientes_ventas_combined.json'
 const LINE_FILE = '../cobranza/line.json'
@@ -156,6 +156,37 @@ async function checkAndSendNotifications(client, clientData) {
   }
 }
 
+function isTimeToSendNotifications() {
+  const now = moment().tz('America/Mexico_City')
+  const elevenaAm = moment()
+    .tz('America/Mexico_City')
+    .hours(11)
+    .minutes(0)
+    .seconds(0)
+
+  return now.isSameOrAfter(elevenaAm)
+}
+
+async function startCreditNotifications(client) {
+  setInterval(async () => {
+    const isTimeToSend = isTimeToSendNotifications()
+    if (isTimeToSend) {
+      const clients = loadClients()
+      await checkAndSendNotifications(client, clients)
+    } else {
+      console.log('Aún no es la hora de enviar notificaciones de crédito.')
+    }
+  }, 1000 * 60 * 5) // Verifica cada 5 minutos
+
+  // Enviar notificaciones al inicio, si es la hora adecuada
+  if (isTimeToSendNotifications()) {
+    const clients = loadClients()
+    await checkAndSendNotifications(client, clients)
+  } else {
+    console.log('Aún no es la hora de enviar notificaciones de crédito.')
+  }
+}
+
 wa.create({
   sessionId: 'CREDIT_BOT_SESSION',
   multiDevice: true,
@@ -168,13 +199,3 @@ wa.create({
   popup: true,
   qrTimeout: 0,
 }).then((client) => startCreditNotifications(client))
-
-async function startCreditNotifications(client) {
-  setInterval(() => {
-    const clients = loadClients()
-    checkAndSendNotifications(client, clients)
-  }, 1000 * 60 * 60)
-
-  const clients = loadClients()
-  await checkAndSendNotifications(client, clients)
-}
